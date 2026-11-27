@@ -1104,7 +1104,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Eyebrow(text: "Startup").padding(.bottom, 4)
                     ToggleRow(title: "Launch at login",
-                              subtitle: "Dayline lives in the menu bar, with no Dock icon.",
+                              subtitle: "Dayline opens its window and stays in the menu bar.",
                               isOn: Binding(
                                 get: { model.settings.launchAtLogin },
                                 set: { model.setLaunchAtLogin($0) }
@@ -1167,9 +1167,9 @@ struct SettingsView: View {
                         .font(.system(size: 11.5))
                         .foregroundStyle(DL.muted)
                     HStack(spacing: 8) {
-                        Chip(text: "Version 1.0", style: .plain)
+                        Chip(text: "Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "–")", style: .plain)
                         Chip(text: "macOS 14+", style: .plain)
-                        Chip(text: "Menu bar only", style: .plain)
+                        Chip(text: "Dock and menu bar", style: .plain)
                     }
                 }
             }
