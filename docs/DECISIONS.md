@@ -34,8 +34,9 @@ and replaced by the newest backup.
 ## AppKit shell, SwiftUI screens
 
 `MenuBarExtra` cannot show a coloured countdown title or open arbitrary
-windows the way the design needs. Dayline uses `NSApplication` with
-`.accessory` activation policy (no Dock icon, `LSUIElement`), an `NSStatusItem`
+windows the way the design needs. Dayline uses `NSApplication` as a regular app
+(Dock icon, main window with a sidebar for overview, plan, activities, journal
+and summaries), an `NSStatusItem`
 with a template icon and a text title, and an `NSPopover` hosting
 `PopoverView`. Every other screen is an `NSWindow` + `NSHostingView`, tracked by
 route so a second click focuses the existing window.
@@ -55,6 +56,17 @@ schedule, with a wind-down prompt before the end of work hours.
 Defaults: 09:00–17:30 Mon–Fri, wind-down 17:15, lunch window 11:30–14:00, five
 goals (standing 120 min, six breaks, two breathing sessions, 30-minute lunch,
 one reflection).
+
+## Equipment and activities
+
+Built-in equipment can be switched off or removed, and added back. Equipment
+the user adds gets one timed activity each (`BreakKind.custom`), named after it;
+the name is stored on every logged activity so history survives removing the
+equipment later.
+
+A day's standing, walking and lunch totals are derived from its finished
+activities (`DayTotals`) whenever one is completed, edited, added or deleted, so
+the editor and the goals can never disagree.
 
 ## Break engine
 

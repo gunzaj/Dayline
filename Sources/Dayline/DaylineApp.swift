@@ -8,7 +8,9 @@ struct DaylineApp {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        // A regular app with a Dock icon and a main window; the menu bar item
+        // stays as the quick way in.
+        app.setActivationPolicy(.regular)
         // Dayline is light mode only.
         app.appearance = NSAppearance(named: .aqua)
         app.run()
@@ -35,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         if ProcessInfo.processInfo.environment["DAYLINE_DEMO"] == "1" {
             model.evaluate(forceTick: true)
         }
+        show(.main)
         #if DEBUG
         if let show = ProcessInfo.processInfo.environment["DAYLINE_SHOW"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -42,6 +45,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             }
         }
         #endif
+    }
+
+    /// Clicking the Dock icon with no window open brings the main window back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { show(.main) }
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -167,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         statusItem.menu = nil
     }
 
-    @objc private func menuOpen() { togglePopover() }
+    @objc private func menuOpen() { show(.main) }
     @objc private func menuBreak() { model.startBreakNow() }
     @objc private func menuStartDay() { model.startDay() }
     @objc private func menuEndDay() { model.endDay() }
@@ -251,6 +260,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         let window = NSMenu(title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        window.addItem(.separator())
+        window.addItem(withTitle: "Dayline", action: #selector(menuOpen), keyEquivalent: "0").target = self
         window.addItem(withTitle: "Today's plan", action: #selector(menuPlan), keyEquivalent: "p").target = self
         window.addItem(withTitle: "Summaries", action: #selector(menuSummaries), keyEquivalent: "y").target = self
         windowItem.submenu = window
@@ -310,6 +321,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         case "year": model.summaryTab = .year; show(.summaries)
         case "week": model.summaryTab = .week; show(.summaries)
         case "plan": show(.plan)
+        case "main": show(.main)
+        case "activities": model.mainSection = .activities; show(.main)
         case "reflection": model.openReflection()
         case "checkin": show(.checkIn)
         case "popover": togglePopover()
@@ -349,9 +362,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
     // MARK: - Windows
 
-    private func show(_ route: WindowRoute) {
-        if route == .session { openSessionWindow(); return }
+    private func show(_ requested: WindowRoute) {
+        if requested == .session { openSessionWindow(); return }
         closePopover()
+        // Journal, plan and summaries live in the main window's sidebar.
+        var route = requested
+        switch requested {
+        case .journal: model.mainSection = .journal; route = .main
+        case .plan: model.mainSection = .plan; route = .main
+        case .summaries, .insight: model.mainSection = .summaries; route = .main
+        default: break
+        }
         let key = route.rawValue
         if route == .checkIn, let existing = windows[key] {
             // A check-in window left open shows the previous, already saved
@@ -365,33 +386,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         }
         let window: NSWindow
         switch route {
-        case .journal:
-            window = makeWindow(title: "Journal", size: NSSize(width: 860, height: 640), route: route)
-            window.contentView = NSHostingView(rootView: JournalView().environmentObject(model).daylineTheme())
+        case .main:
+            window = makeWindow(title: "Dayline", size: NSSize(width: 1240, height: 820), route: route)
+            window.minSize = NSSize(width: 960, height: 600)
+            window.setFrameAutosaveName("dayline.main")
+            window.contentView = NSHostingView(rootView: MainWindowView().environmentObject(model).daylineTheme())
         case .reflection:
             window = makeWindow(title: "End of day", size: NSSize(width: 820, height: 760), route: route)
             window.contentView = NSHostingView(rootView: ReflectionView().environmentObject(model).daylineTheme())
-        case .summaries:
-            window = makeWindow(title: "Summaries", size: NSSize(width: 1020, height: 760), route: route)
-            window.contentView = NSHostingView(rootView: SummariesView().environmentObject(model).daylineTheme())
         case .settings:
             window = makeWindow(title: "Dayline Settings", size: NSSize(width: 900, height: 700), route: route)
             window.contentView = NSHostingView(rootView: SettingsView().environmentObject(model).daylineTheme())
-        case .plan:
-            window = makeWindow(title: "Today's plan", size: NSSize(width: 760, height: 720), route: route)
-            window.contentView = NSHostingView(rootView: PlanView().environmentObject(model).daylineTheme())
         case .checkIn:
             window = makeWindow(title: "How are you doing?", size: NSSize(width: 520, height: 680), route: route)
             window.contentView = NSHostingView(rootView: checkInView())
-        case .insight:
-            window = makeWindow(title: "Insights", size: NSSize(width: 760, height: 600), route: route)
-            window.contentView = NSHostingView(rootView: SummariesView().environmentObject(model).daylineTheme())
-        case .session:
+        case .journal, .plan, .summaries, .insight, .session:
             return
         }
         windows[key] = window
         window.delegate = self
-        window.center()
+        // The main window comes back where it was left; others open centred.
+        if route != .main || !window.setFrameUsingName("dayline.main") {
+            window.center()
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

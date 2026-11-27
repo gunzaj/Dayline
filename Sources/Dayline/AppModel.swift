@@ -4,9 +4,30 @@ import Foundation
 import SwiftUI
 
 enum WindowRoute: String, Identifiable {
-    case journal, reflection, summaries, settings, plan, checkIn, session, insight
+    case main, journal, reflection, summaries, settings, plan, checkIn, session, insight
 
     var id: String { rawValue }
+}
+
+/// The sections of the desktop window's sidebar.
+enum MainSection: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case plan = "Today's plan"
+    case activities = "Activities"
+    case journal = "Journal"
+    case summaries = "Summaries"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .overview: return "square.grid.2x2"
+        case .plan: return "calendar.day.timeline.left"
+        case .activities: return "figure.walk"
+        case .journal: return "book.closed"
+        case .summaries: return "chart.bar"
+        }
+    }
 }
 
 enum SummaryTab: String, CaseIterable, Identifiable {
@@ -99,6 +120,9 @@ final class AppModel: ObservableObject {
     @Published var aiError: String?
     @Published var summaryTab: SummaryTab = .day
     @Published var settingsTab: SettingsTab = .schedule
+    @Published var mainSection: MainSection = .overview
+    /// The day shown in the activity editor.
+    @Published var activitiesDayKey: String = DayKey.make(Date())
     @Published var reflectionDayKey: String = DayKey.make(Date())
     @Published var pendingWrapUpDay: String?
     @Published var isPopoverOpen = false
@@ -748,8 +772,11 @@ extension AppModel {
     func updateActivity(id: String, _ change: (inout BreakEvent) -> Void) {
         guard id != session?.eventID,
               let index = state.breaks.firstIndex(where: { $0.id == id }) else { return }
-        var item = state.breaks[index]
+        let original = state.breaks[index]
+        var item = original
         change(&item)
+        // Nothing changed: leave the day's totals and the file alone.
+        guard item != original else { return }
         item.minutes = max(0, item.minutes)
         if let start = item.startedAt {
             item.endedAt = start.adding(minutes: item.minutes)
