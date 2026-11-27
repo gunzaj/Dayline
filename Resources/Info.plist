@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>Dayline</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.gunzaj.dayline</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Dayline</string>
+    <key>CFBundleDisplayName</key>
+    <string>Dayline</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>Dayline</string>
+    <key>CFBundleIconName</key>
+    <string>Dayline</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Dayline. Local-first workday coach.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Dayline reads your calendar to find free gaps between meetings and time breaks around them. It never creates or edits events.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Dayline reads your calendar to find free gaps between meetings and time breaks around them. It never creates or edits events.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Dayline checks whether the camera is in use so it can pause break prompts during calls. It never records video.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Dayline checks whether the microphone is in use so it can pause break prompts during calls. It never records audio.</string>
+</dict>
+</plist>

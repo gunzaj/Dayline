@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build-and-check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Behavioural checks
+        run: swift run dayline-checks
+      - name: Release build
+        run: swift build -c release
+      - name: Garmin helper syntax
+        run: python3 -c "import ast; ast.parse(open('scripts/garmin_helper.py').read())"
