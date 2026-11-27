@@ -12,6 +12,8 @@ public enum BreakKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case balanceBoard
     case gripSets
     case lunch
+    /// An activity on equipment the user added. Its name lives on the exercise.
+    case custom
 
     public var id: String { rawValue }
 
@@ -26,6 +28,7 @@ public enum BreakKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .balanceBoard: return "Balance board"
         case .gripSets: return "Grip sets"
         case .lunch: return "Lunch away from desk"
+        case .custom: return "Activity"
         }
     }
 
@@ -40,12 +43,13 @@ public enum BreakKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .balanceBoard: return "Balance"
         case .gripSets: return "Grips"
         case .lunch: return "Lunch"
+        case .custom: return "Activity"
         }
     }
 
     public var equipment: EquipmentKind? {
         switch self {
-        case .boxBreathing, .squats, .standUpStretch, .lunch: return nil
+        case .boxBreathing, .squats, .standUpStretch, .lunch, .custom: return nil
         case .standingBlock: return .standingDesk
         case .walkingPad: return .walkingPad
         case .matMobility: return .pranaMat
@@ -65,6 +69,7 @@ public enum BreakKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .balanceBoard: return 5
         case .gripSets: return 2
         case .lunch: return 30
+        case .custom: return 10
         }
     }
 
@@ -79,6 +84,7 @@ public enum BreakKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .balanceBoard: return "figure.surfing"
         case .gripSets: return "hand.raised.fill"
         case .lunch: return "fork.knife"
+        case .custom: return "figure.mixed.cardio"
         }
     }
 
@@ -160,6 +166,35 @@ public struct Equipment: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// Equipment the user added themselves. Each item brings one timed activity.
+public struct CustomEquipment: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var enabled: Bool
+    /// Length of a session on it.
+    public var minutes: Int
+    /// Whether a session counts in full toward the standing and walking goal.
+    public var countsAsStanding: Bool
+
+    public init(id: String = IDGen.make("equipment"), name: String, enabled: Bool = true,
+                minutes: Int = 10, countsAsStanding: Bool = false) {
+        self.id = id
+        self.name = name
+        self.enabled = enabled
+        self.minutes = max(1, minutes)
+        self.countsAsStanding = countsAsStanding
+    }
+
+    /// The id of the activity this equipment contributes to the exercise list.
+    public var exerciseID: String { "custom-" + id }
+
+    public var exercise: ExerciseDef {
+        ExerciseDef(id: exerciseID, kind: .custom, name: name,
+                    minutesLow: minutes, minutesHigh: minutes, intensity: 2,
+                    steps: [], guidance: .countdown)
+    }
+}
+
 // MARK: - Guidance
 
 public enum GuidanceType: String, Codable, Sendable {
@@ -204,6 +239,11 @@ public struct ExerciseDef: Codable, Identifiable, Hashable, Sendable {
     public func minutes(for gapMinutes: Int) -> Int {
         min(minutesHigh, max(minutesLow, min(gapMinutes, minutesHigh)))
     }
+}
+
+extension ExerciseDef {
+    /// The break's kind for built-in exercises, the user's own name for custom ones.
+    public var displayTitle: String { kind == .custom ? name : kind.title }
 }
 
 /// The exercise library is data, not code: edit this list to add exercises.
@@ -263,15 +303,29 @@ public enum ExerciseLibrary {
         all.first { $0.id == id }
     }
 
+    /// Built-in exercises plus one per piece of equipment the user added.
+    public static func everything(settings: AppSettings) -> [ExerciseDef] {
+        all + settings.customEquipment.map(\.exercise)
+    }
+
+    public static func find(_ id: String, settings: AppSettings) -> ExerciseDef? {
+        everything(settings: settings).first { $0.id == id }
+    }
+
+    /// What the engine may suggest: nothing disabled, nothing that needs
+    /// equipment the user does not have or has switched off.
     public static func available(settings: AppSettings) -> [ExerciseDef] {
         let enabled = Set(settings.equipment.filter(\.enabled).map(\.id))
         let disabledExercises = Set(settings.disabledExerciseIDs)
-        return all.filter { ex in
+        let builtIn = all.filter { ex in
             if disabledExercises.contains(ex.id) { return false }
             if let eq = ex.equipment, !enabled.contains(eq) { return false }
-            if ex.kind == .lunch { return true }
             return true
         }
+        let custom = settings.customEquipment
+            .filter { $0.enabled && !disabledExercises.contains($0.exerciseID) }
+            .map(\.exercise)
+        return builtIn + custom
     }
 }
 
@@ -371,6 +425,8 @@ public struct WorkDay: Codable, Identifiable, Hashable, Sendable {
     public var windDownPromptedAt: Date?
     public var wrapUpPromptedAt: Date?
     public var focusUntil: Date?
+    /// The exercise of the last finished break, so the next pick can differ.
+    public var lastExerciseID: String?
 
     public init(dayKey: String, date: Date, targets: DayTargets = DayTargets()) {
         self.id = "day-" + dayKey
@@ -442,12 +498,19 @@ public struct BreakEvent: Codable, Identifiable, Hashable, Sendable {
     public var verifiedBy: VerifiedBy?
     public var minutes: Int
     public var needsConfirmation: Bool
+    /// The activity's name when the kind alone does not say it (custom equipment).
+    public var title: String?
+    /// Set for custom activities: whether the minutes count in full as standing.
+    public var countsAsStanding: Bool?
 
     public init(id: String = IDGen.make("break"), dayKey: String, exerciseID: String,
                 kind: BreakKind, plannedAt: Date, escalationStep: Int = 0,
                 startedAt: Date? = nil, endedAt: Date? = nil, outcome: BreakOutcome = .planned,
                 skipReason: SkipReason? = nil, verifiedBy: VerifiedBy? = nil,
-                minutes: Int = 0, needsConfirmation: Bool = false) {
+                minutes: Int = 0, needsConfirmation: Bool = false,
+                title: String? = nil, countsAsStanding: Bool? = nil) {
+        self.title = title
+        self.countsAsStanding = countsAsStanding
         self.id = id
         self.dayKey = dayKey
         self.exerciseID = exerciseID
@@ -464,6 +527,51 @@ public struct BreakEvent: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var isDone: Bool { outcome == .done }
+
+    /// What to call this activity in lists.
+    public var displayTitle: String {
+        if let title, !title.isEmpty { return title }
+        return kind.title
+    }
+}
+
+/// A day's standing, walking and lunch totals, derived from its finished
+/// activities. Used whenever an activity is completed, edited or removed, so
+/// the totals always agree with the list.
+public enum DayTotals {
+    public struct Totals: Equatable, Sendable {
+        public var standing = 0
+        public var walking = 0
+        public var lunch = 0
+    }
+
+    public static func totals(for breaks: [BreakEvent]) -> Totals {
+        var totals = Totals()
+        for item in breaks where item.outcome == .done {
+            let minutes = max(0, item.minutes)
+            switch item.kind {
+            case .walkingPad:
+                totals.walking += minutes
+            case .standingBlock, .balanceBoard:
+                totals.standing += minutes
+            case .lunch:
+                totals.lunch = max(totals.lunch, minutes)
+            case .custom:
+                totals.standing += item.countsAsStanding == true ? minutes : max(1, minutes / 2)
+            case .boxBreathing, .squats, .standUpStretch, .matMobility, .gripSets:
+                // Short breaks get you out of the chair for about half their length.
+                totals.standing += max(1, minutes / 2)
+            }
+        }
+        return totals
+    }
+
+    public static func apply(to day: inout WorkDay, breaks: [BreakEvent]) {
+        let totals = totals(for: breaks)
+        day.standingMinutes = totals.standing
+        day.walkingMinutes = totals.walking
+        day.lunchMinutes = totals.lunch
+    }
 }
 
 // MARK: - Health

@@ -293,7 +293,7 @@ struct PopoverView: View {
             Chip(text: "One tap", style: .warn, symbol: "hand.raised")
             Text(pending.prompt)
                 .font(.system(size: 16, weight: .semibold))
-            Text("\(pending.kind.title) · \(pending.minutes) min. \(model.settings.verification == .honorSystem ? "Honor system." : "The signal was unclear.")")
+            Text("\(pending.title) · \(pending.minutes) min. \(model.settings.verification == .honorSystem ? "Honor system." : "The signal was unclear.")")
                 .font(.system(size: 12))
                 .foregroundStyle(DL.muted)
             HStack {

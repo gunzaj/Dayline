@@ -201,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         button.title = title.isEmpty ? "" : " " + title
         button.contentTintColor = .labelColor
         button.toolTip = decision.isDue
-            ? "\(decision.exercise?.kind.title ?? "Break") — \(decision.why)"
+            ? "\(decision.exercise?.displayTitle ?? "Break") — \(decision.why)"
             : decision.why
 
         if let dot = statusDot {

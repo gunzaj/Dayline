@@ -261,9 +261,9 @@ public enum JournalExport {
                 let when = b.startedAt.map { Fmt.time.string(from: $0) } ?? Fmt.time.string(from: b.plannedAt)
                 switch b.outcome {
                 case .done:
-                    out.append("- \(when) · \(b.kind.title) · \(b.minutes) min\(b.verifiedBy.map { " · verified by \($0.rawValue)" } ?? "")")
+                    out.append("- \(when) · \(b.displayTitle) · \(b.minutes) min\(b.verifiedBy.map { " · verified by \($0.rawValue)" } ?? "")")
                 case .skipped:
-                    out.append("- \(when) · \(b.kind.title) · skipped\(b.skipReason.map { " (\($0.rawValue))" } ?? "")")
+                    out.append("- \(when) · \(b.displayTitle) · skipped\(b.skipReason.map { " (\($0.rawValue))" } ?? "")")
                 default:
                     break
                 }

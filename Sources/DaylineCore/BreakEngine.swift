@@ -144,7 +144,7 @@ public struct BreakDecision: Sendable {
 
     public var nextBreakLabel: String {
         if isDue {
-            return exercise?.kind.title ?? "Break"
+            return exercise?.displayTitle ?? "Break"
         }
         if let seconds = secondsUntilDue {
             let minutes = max(1, Int(ceil(Double(seconds) / 60.0)))
@@ -426,7 +426,9 @@ public enum BreakEngine {
                    candidates.contains(where: { $0.kind != lastKind && kinds.contains($0.kind) && $0.minutesLow <= max(gap, 2) }) {
                     continue
                 }
-                return pool.min { $0.minutesLow < $1.minutesLow }
+                // Among several of one kind, avoid the one just done.
+                let fresh = pool.filter { $0.id != day.lastExerciseID }
+                return (fresh.isEmpty ? pool : fresh).min { $0.minutesLow < $1.minutesLow }
             }
             return nil
         }
@@ -472,7 +474,7 @@ public enum BreakEngine {
         }
         // Start after the last break's kind so the day cycles through every
         // available exercise instead of alternating between the first two.
-        var normal: [BreakKind] = [.squats, .gripSets, .balanceBoard, .standUpStretch, .boxBreathing]
+        var normal: [BreakKind] = [.squats, .gripSets, .balanceBoard, .custom, .standUpStretch, .boxBreathing]
         if let lastKind, let position = normal.firstIndex(of: lastKind) {
             normal = Array(normal[(position + 1)...] + normal[...position])
         }
