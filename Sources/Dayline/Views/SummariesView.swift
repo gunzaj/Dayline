@@ -202,7 +202,7 @@ struct SummariesView: View {
                         Image(systemName: brk.outcome == .done ? "checkmark.circle.fill" : (brk.outcome == .skipped ? "xmark.circle" : "zzz.circle"))
                             .font(.system(size: 10))
                             .foregroundStyle(brk.outcome == .done ? DL.calm : DL.muted)
-                        Text(brk.kind.title)
+                        Text(brk.displayTitle)
                             .font(.system(size: 11.5))
                         if brk.minutes > 0 {
                             Text("\(brk.minutes)m").font(.system(size: 10)).foregroundStyle(DL.muted)

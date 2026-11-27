@@ -162,6 +162,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     // Equipment and exercises
     public var equipment: [Equipment] = Equipment.defaults
+    public var customEquipment: [CustomEquipment] = []
     public var disabledExerciseIDs: [String] = []
 
     // Calendar
@@ -242,6 +243,20 @@ public struct AppSettings: Codable, Equatable, Sendable {
         }
     }
 
+    /// Built-in equipment the user has removed and could add back.
+    public var missingBuiltInEquipment: [EquipmentKind] {
+        EquipmentKind.allCases.filter { kind in !equipment.contains { $0.id == kind } }
+    }
+
+    public mutating func removeEquipment(_ kind: EquipmentKind) {
+        equipment.removeAll { $0.id == kind }
+    }
+
+    public mutating func addEquipment(_ kind: EquipmentKind) {
+        guard !equipment.contains(where: { $0.id == kind }) else { return }
+        equipment.append(Equipment(kind, enabled: true))
+    }
+
     public var targets: DayTargets {
         DayTargets(standingMinutes: standingTargetMinutes, breaks: breaksTarget,
                    breathing: breathingTarget, lunchMinutes: lunchTargetMinutes, reflection: 1)
@@ -255,7 +270,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case lunchTargetMinutes, lunchWindowStart, lunchWindowEnd
         case escalationNotificationAfter, escalationOverlayAfter, snoozeLimit, snoozeMinutes
         case verification, micIgnoreBundleIDs, openMicCapMinutes, pauseOnMedia, focusLengths
-        case equipment, disabledExerciseIDs, selectedCalendarIDs, calendarAccessRequested
+        case equipment, customEquipment, disabledExerciseIDs, selectedCalendarIDs, calendarAccessRequested
         case longMeetingMinutes, backToBackMinutes, standingRules, ignoreAllDay
         case checkInMorning, checkInAfterLunch, checkInEndOfDay, prompts, hotkey, lastExportFolder
         case ai, garmin, launchAtLogin, sounds, appearance, showDemoData
@@ -287,6 +302,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         pauseOnMedia = (try? c.decode(Bool.self, forKey: .pauseOnMedia)) ?? d.pauseOnMedia
         focusLengths = (try? c.decode([Int].self, forKey: .focusLengths)) ?? d.focusLengths
         equipment = (try? c.decode([Equipment].self, forKey: .equipment)) ?? d.equipment
+        customEquipment = (try? c.decode([CustomEquipment].self, forKey: .customEquipment)) ?? d.customEquipment
         disabledExerciseIDs = (try? c.decode([String].self, forKey: .disabledExerciseIDs)) ?? d.disabledExerciseIDs
         selectedCalendarIDs = (try? c.decode([String].self, forKey: .selectedCalendarIDs)) ?? d.selectedCalendarIDs
         calendarAccessRequested = (try? c.decode(Bool.self, forKey: .calendarAccessRequested)) ?? d.calendarAccessRequested

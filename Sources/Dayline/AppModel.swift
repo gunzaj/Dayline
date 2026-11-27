@@ -4,9 +4,30 @@ import Foundation
 import SwiftUI
 
 enum WindowRoute: String, Identifiable {
-    case journal, reflection, summaries, settings, plan, checkIn, session, insight
+    case main, journal, reflection, summaries, settings, plan, checkIn, session, insight
 
     var id: String { rawValue }
+}
+
+/// The sections of the desktop window's sidebar.
+enum MainSection: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case plan = "Today's plan"
+    case activities = "Activities"
+    case journal = "Journal"
+    case summaries = "Summaries"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .overview: return "square.grid.2x2"
+        case .plan: return "calendar.day.timeline.left"
+        case .activities: return "figure.walk"
+        case .journal: return "book.closed"
+        case .summaries: return "chart.bar"
+        }
+    }
 }
 
 enum SummaryTab: String, CaseIterable, Identifiable {
@@ -71,6 +92,8 @@ struct PendingConfirmation: Identifiable {
     var id: String { eventID }
     var eventID: String
     var kind: BreakKind
+    /// The activity's own name (custom equipment), or the kind's.
+    var title: String
     var minutes: Int
     var prompt: String
 }
@@ -97,6 +120,9 @@ final class AppModel: ObservableObject {
     @Published var aiError: String?
     @Published var summaryTab: SummaryTab = .day
     @Published var settingsTab: SettingsTab = .schedule
+    @Published var mainSection: MainSection = .overview
+    /// The day shown in the activity editor.
+    @Published var activitiesDayKey: String = DayKey.make(Date())
     @Published var reflectionDayKey: String = DayKey.make(Date())
     @Published var pendingWrapUpDay: String?
     @Published var isPopoverOpen = false
@@ -339,7 +365,7 @@ final class AppModel: ObservableObject {
         }
         if decision.step >= .notification {
             lastPromptedDue = decision.dueAt
-            let title = decision.exercise?.kind.title ?? "Time to move"
+            let title = decision.exercise?.displayTitle ?? "Time to move"
             notifications.postBreak(title: title,
                                     body: decision.why.isEmpty ? "You have been seated for a while." : decision.why,
                                     dueAt: decision.dueAt ?? now)
@@ -499,7 +525,9 @@ extension AppModel {
                                startedAt: now,
                                outcome: .planned,
                                minutes: length,
-                               needsConfirmation: state.settings.verification == .autoConfirm)
+                               needsConfirmation: state.settings.verification == .autoConfirm,
+                               title: kind == .custom ? exercise.name : nil,
+                               countsAsStanding: customCountsAsStanding(exerciseID: exercise.id))
         state.breaks.append(event)
         dirty = true
         sessionIdleSeconds = 0
@@ -594,14 +622,14 @@ extension AppModel {
             clearSignal = idleAway >= Double(duration) * 0.4 || stepDelta >= 60 || active.kind.isStanding
         }
         if state.settings.verification == .honorSystem {
-            pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind,
+            pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind, title: active.exercise.displayTitle,
                                                       minutes: active.minutes,
                                                       prompt: "How did it go?")
         } else if clearSignal {
             completeBreak(eventID: active.eventID, outcome: .done, verifiedBy: .auto,
                           minutes: active.minutes, kind: active.kind)
         } else {
-            pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind,
+            pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind, title: active.exercise.displayTitle,
                                                       minutes: active.minutes,
                                                       prompt: "Did you do it?")
         }
@@ -617,7 +645,7 @@ extension AppModel {
         sessionSecondsRemaining = 0
         SoundPlayer.breakEnd(enabled: state.settings.sounds)
         if state.settings.verification == .honorSystem {
-            pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind,
+            pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind, title: active.exercise.displayTitle,
                                                       minutes: minutes, prompt: "Done?")
         } else {
             completeBreak(eventID: active.eventID, outcome: .done, verifiedBy: .confirm,
@@ -631,7 +659,7 @@ extension AppModel {
         guard let active = session else { return }
         session = nil
         sessionSecondsRemaining = 0
-        pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind,
+        pendingConfirmation = PendingConfirmation(eventID: active.eventID, kind: active.kind, title: active.exercise.displayTitle,
                                                   minutes: 0, prompt: "You stopped early.")
         closeSessionWindow()
         recomputeDecision()
@@ -669,17 +697,9 @@ extension AppModel {
             state.breaks[idx].skipReason = skipReason
         }
         if outcome == .done {
-            switch kind {
-            // Standing and walking are separate totals; summaries add them.
-            case .walkingPad:
-                day.walkingMinutes += minutes
-            case .standingBlock, .balanceBoard:
-                day.standingMinutes += minutes
-            case .lunch:
-                day.lunchMinutes = max(day.lunchMinutes, minutes)
-            case .boxBreathing, .squats, .standUpStretch, .matMobility, .gripSets:
-                day.standingMinutes += max(1, minutes / 2)
-            }
+            // Standing, walking and lunch totals always follow the activity list.
+            DayTotals.apply(to: &day, breaks: state.breaks(on: day.dayKey))
+            day.lastExerciseID = state.breaks.first { $0.id == eventID }?.exerciseID
             day.seatedMinutes = 0
             day.seatedSince = now
             day.lastBreakEnd = now
@@ -712,6 +732,140 @@ extension AppModel {
 
     private func latestSteps() -> Int? {
         state.latestHealthSample()?.steps ?? health.steps
+    }
+}
+
+// MARK: - Editing activities
+
+extension AppModel {
+    /// Every exercise that can be logged by hand, including ones the engine
+    /// would not suggest right now.
+    var loggableExercises: [ExerciseDef] {
+        ExerciseLibrary.everything(settings: state.settings)
+    }
+
+    private func customCountsAsStanding(exerciseID: String) -> Bool? {
+        state.settings.customEquipment.first { $0.exerciseID == exerciseID }?.countsAsStanding
+    }
+
+    /// Finished and skipped activities for a day, oldest first.
+    func activities(on dayKey: String) -> [BreakEvent] {
+        state.breaks(on: dayKey)
+            .filter { $0.outcome == .done || $0.outcome == .skipped }
+            .sorted { ($0.startedAt ?? $0.plannedAt) < ($1.startedAt ?? $1.plannedAt) }
+    }
+
+    /// Logs an activity after the fact.
+    func addActivity(dayKey: String, exerciseID: String, start: Date, minutes: Int) {
+        guard let exercise = ExerciseLibrary.find(exerciseID, settings: state.settings) else { return }
+        let length = max(1, minutes)
+        state.breaks.append(BreakEvent(dayKey: dayKey, exerciseID: exercise.id, kind: exercise.kind,
+                                       plannedAt: start, startedAt: start,
+                                       endedAt: start.adding(minutes: length),
+                                       outcome: .done, verifiedBy: .confirm, minutes: length,
+                                       title: exercise.kind == .custom ? exercise.name : nil,
+                                       countsAsStanding: customCountsAsStanding(exerciseID: exercise.id)))
+        activitiesChanged(on: dayKey)
+    }
+
+    /// Applies an edit to one logged activity. The session in progress cannot be edited.
+    func updateActivity(id: String, _ change: (inout BreakEvent) -> Void) {
+        guard id != session?.eventID,
+              let index = state.breaks.firstIndex(where: { $0.id == id }) else { return }
+        let original = state.breaks[index]
+        var item = original
+        change(&item)
+        // Nothing changed: leave the day's totals and the file alone.
+        guard item != original else { return }
+        item.minutes = max(0, item.minutes)
+        if let start = item.startedAt {
+            item.endedAt = start.adding(minutes: item.minutes)
+        }
+        if item.outcome == .done {
+            item.skipReason = nil
+            if item.verifiedBy == nil { item.verifiedBy = .confirm }
+            if item.startedAt == nil { item.startedAt = item.plannedAt }
+        } else {
+            item.verifiedBy = nil
+        }
+        item.needsConfirmation = false
+        state.breaks[index] = item
+        activitiesChanged(on: item.dayKey)
+    }
+
+    /// Changes which exercise an activity was.
+    func setActivityExercise(id: String, exerciseID: String) {
+        guard let exercise = ExerciseLibrary.find(exerciseID, settings: state.settings) else { return }
+        let standing = customCountsAsStanding(exerciseID: exercise.id)
+        updateActivity(id: id) { item in
+            item.exerciseID = exercise.id
+            item.kind = exercise.kind
+            item.title = exercise.kind == .custom ? exercise.name : nil
+            item.countsAsStanding = standing
+        }
+    }
+
+    func deleteActivity(id: String) {
+        guard id != session?.eventID,
+              let item = state.breaks.first(where: { $0.id == id }) else { return }
+        state.breaks.removeAll { $0.id == id }
+        if pendingConfirmation?.eventID == id { pendingConfirmation = nil }
+        activitiesChanged(on: item.dayKey)
+    }
+
+    func confirmDeleteActivity(id: String) {
+        guard let item = state.breaks.first(where: { $0.id == id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Delete \(item.displayTitle)?"
+        alert.informativeText = "It is removed from this day's totals and goals. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            deleteActivity(id: id)
+        }
+    }
+
+    /// Re-derives the day's totals from its activities and saves.
+    private func activitiesChanged(on dayKey: String) {
+        var day = state.day(dayKey) ?? WorkDay(dayKey: dayKey, date: DayKey.date(from: dayKey) ?? now,
+                                               targets: state.settings.targets)
+        DayTotals.apply(to: &day, breaks: state.breaks(on: dayKey))
+        updateDay(day)
+        save()
+        recomputeDecision()
+        onDecisionChanged?()
+    }
+}
+
+// MARK: - Equipment
+
+extension AppModel {
+    func addCustomEquipment(name: String, minutes: Int, countsAsStanding: Bool) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        updateSettings {
+            $0.customEquipment.append(CustomEquipment(name: trimmed, minutes: minutes,
+                                                      countsAsStanding: countsAsStanding))
+        }
+    }
+
+    func updateCustomEquipment(id: String, _ change: (inout CustomEquipment) -> Void) {
+        updateSettings { settings in
+            guard let index = settings.customEquipment.firstIndex(where: { $0.id == id }) else { return }
+            change(&settings.customEquipment[index])
+            settings.customEquipment[index].minutes = max(1, min(240, settings.customEquipment[index].minutes))
+        }
+    }
+
+    /// Removing equipment keeps the activities already logged with it.
+    func removeCustomEquipment(id: String) {
+        updateSettings { settings in
+            if let item = settings.customEquipment.first(where: { $0.id == id }) {
+                settings.disabledExerciseIDs.removeAll { $0 == item.exerciseID }
+            }
+            settings.customEquipment.removeAll { $0.id == id }
+        }
     }
 }
 

@@ -9,6 +9,9 @@ final class SettingsUI: ObservableObject {
     @Published var garminMFA = ""
     @Published var apiKeyDraft = ""
     @Published var hasStoredKey = false
+    @Published var newEquipmentName = ""
+    @Published var newEquipmentMinutes = 10
+    @Published var newEquipmentStanding = false
     @Published var aiTestResult: String?
     @Published var aiTestFailed = false
     @Published var newPrompt = ""
@@ -369,10 +372,10 @@ struct SettingsView: View {
                     HStack {
                         Eyebrow(text: "Exercises")
                         Spacer()
-                        Text("\(ExerciseLibrary.all.count - model.settings.disabledExerciseIDs.count) of \(ExerciseLibrary.all.count) available")
+                        Text("\(ExerciseLibrary.available(settings: model.settings).count) of \(ExerciseLibrary.everything(settings: model.settings).count) available")
                             .font(.system(size: 10.5)).foregroundStyle(DL.muted)
                     }
-                    ForEach(ExerciseLibrary.all) { exercise in
+                    ForEach(ExerciseLibrary.everything(settings: model.settings)) { exercise in
                         HStack(spacing: 8) {
                             Toggle("", isOn: Binding(
                                 get: { !model.settings.disabledExerciseIDs.contains(exercise.id) },
@@ -393,6 +396,9 @@ struct SettingsView: View {
                                 .font(.system(size: 12))
                             if let equipment = exercise.equipment {
                                 Chip(text: equipment.title, style: .plain)
+                            }
+                            if exercise.kind == .custom {
+                                Chip(text: "Your equipment", style: .plain)
                             }
                             Spacer()
                             Text("\(exercise.minutesLow)–\(exercise.minutesHigh) min")
@@ -426,37 +432,153 @@ struct SettingsView: View {
             DlCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Eyebrow(text: "At your desk")
-                    ForEach(EquipmentKind.allCases) { kind in
-                        let enabled = model.settings.isEquipmentEnabled(kind)
-                        HStack(alignment: .top, spacing: 10) {
-                            Toggle("", isOn: Binding(
-                                get: { enabled },
-                                set: { value in model.updateSettings { $0.setEquipment(kind, enabled: value) } }
-                            ))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .controlSize(.small)
-                            .tint(DL.calm)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(kind.title).font(.system(size: 12.5, weight: .medium))
-                                Text(kind.defaultNote)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(DL.muted)
+                    if model.settings.equipment.isEmpty && model.settings.customEquipment.isEmpty {
+                        Text("No equipment. Bodyweight breaks and breathing are still suggested.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(DL.muted)
+                    }
+                    ForEach(model.settings.equipment) { item in
+                        builtInEquipmentRow(item)
+                    }
+                    ForEach(model.settings.customEquipment) { item in
+                        customEquipmentRow(item)
+                    }
+                }
+            }
+            DlCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Eyebrow(text: "Add equipment")
+                    if !model.settings.missingBuiltInEquipment.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach(model.settings.missingBuiltInEquipment) { kind in
+                                Button {
+                                    model.updateSettings { $0.addEquipment(kind) }
+                                } label: {
+                                    Label(kind.title, systemImage: "plus")
+                                }
+                                .buttonStyle(SecondaryButtonStyle())
                             }
                             Spacer()
-                            if enabled {
-                                CategoryPill(title: kind.breakKind.shortTitle)
-                            } else {
-                                Chip(text: "Off", style: .plain)
-                            }
                         }
-                        .padding(.vertical, 5)
+                    }
+                    Text("Something else? Give it a name and a session length. It gets a timed activity of its own.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(DL.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        TextField("Name, for example Pull-up bar", text: $ui.newEquipmentName)
+                            .textFieldStyle(.plain)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DL.field))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(DL.line, lineWidth: 1))
+                            .frame(width: 230)
+                            .onSubmit { addNewEquipment() }
+                        numberField($ui.newEquipmentMinutes, width: 46)
+                        Text("min").font(.system(size: 11)).foregroundStyle(DL.muted)
+                        Toggle("Counts as standing", isOn: $ui.newEquipmentStanding)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 11.5))
+                        Spacer()
+                        Button("Add") { addNewEquipment() }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .disabled(ui.newEquipmentName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
             }
             NoticeCard(title: "Why this matters",
-                       message: "Disabling a piece of equipment removes every exercise that needs it from the picker. Bodyweight breaks and breathing stay available.")
+                       message: "Switching off or removing a piece of equipment takes every exercise that needs it out of the picker. Activities you already logged stay in your history. Bodyweight breaks and breathing stay available.")
         }
+    }
+
+    private func addNewEquipment() {
+        model.addCustomEquipment(name: ui.newEquipmentName,
+                                 minutes: max(1, min(240, ui.newEquipmentMinutes)),
+                                 countsAsStanding: ui.newEquipmentStanding)
+        ui.newEquipmentName = ""
+        ui.newEquipmentMinutes = 10
+        ui.newEquipmentStanding = false
+    }
+
+    private func removeButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "trash").font(.system(size: 11))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(DL.muted)
+        .accessibilityLabel(label)
+        .help(label)
+    }
+
+    private func builtInEquipmentRow(_ item: Equipment) -> some View {
+        let kind = item.id
+        return HStack(alignment: .top, spacing: 10) {
+            Toggle(kind.title, isOn: Binding(
+                get: { model.settings.isEquipmentEnabled(kind) },
+                set: { value in model.updateSettings { $0.setEquipment(kind, enabled: value) } }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+            .tint(DL.calm)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(kind.title).font(.system(size: 12.5, weight: .medium))
+                Text(kind.defaultNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(DL.muted)
+            }
+            Spacer()
+            if item.enabled {
+                CategoryPill(title: kind.breakKind.shortTitle)
+            } else {
+                Chip(text: "Off", style: .plain)
+            }
+            removeButton("Remove \(kind.title)") {
+                model.updateSettings { $0.removeEquipment(kind) }
+            }
+        }
+        .padding(.vertical, 5)
+    }
+
+    private func customEquipmentRow(_ item: CustomEquipment) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Toggle(item.name, isOn: Binding(
+                get: { item.enabled },
+                set: { value in model.updateCustomEquipment(id: item.id) { $0.enabled = value } }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+            .tint(DL.calm)
+            TextField("Name", text: Binding(
+                get: { item.name },
+                set: { value in model.updateCustomEquipment(id: item.id) { $0.name = value } }
+            ))
+            .textFieldStyle(.plain)
+            .font(.system(size: 12.5, weight: .medium))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DL.field))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(DL.line, lineWidth: 1))
+            .frame(width: 200)
+            numberField(Binding(
+                get: { item.minutes },
+                set: { value in model.updateCustomEquipment(id: item.id) { $0.minutes = value } }
+            ), width: 46)
+            Text("min").font(.system(size: 11)).foregroundStyle(DL.muted)
+            Toggle("Counts as standing", isOn: Binding(
+                get: { item.countsAsStanding },
+                set: { value in model.updateCustomEquipment(id: item.id) { $0.countsAsStanding = value } }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.system(size: 11.5))
+            Spacer()
+            if !item.enabled {
+                Chip(text: "Off", style: .plain)
+            }
+            removeButton("Remove \(item.name)") {
+                model.removeCustomEquipment(id: item.id)
+            }
+        }
+        .padding(.vertical, 5)
     }
 
     // MARK: - Calendar

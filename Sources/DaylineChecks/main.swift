@@ -472,6 +472,77 @@ let keyless = try? await AIClient(transport: StubTransport())
     .insights(state: localState, period: .lastDays(7, endingAt: at("2026-11-27", 12)))
 equal(keyless?.observations.first, "ok", "a custom endpoint works without an API key")
 
+// MARK: - Equipment the user owns
+
+var gear = baseSettings()
+equal(gear.missingBuiltInEquipment.count, 0, "all built-in equipment is present by default")
+gear.removeEquipment(.walkingPad)
+check(!ExerciseLibrary.available(settings: gear).contains { $0.kind == .walkingPad },
+      "removed equipment takes its exercises out")
+equal(gear.missingBuiltInEquipment, [.walkingPad], "removed equipment can be added back")
+gear.addEquipment(.walkingPad)
+check(ExerciseLibrary.available(settings: gear).contains { $0.kind == .walkingPad }, "re-added equipment returns")
+
+let pullUpBar = CustomEquipment(name: "Pull-up bar", minutes: 4, countsAsStanding: true)
+gear.customEquipment.append(pullUpBar)
+let customExercise = ExerciseLibrary.find(pullUpBar.exerciseID, settings: gear)
+equal(customExercise?.name, "Pull-up bar", "custom equipment brings its own activity")
+equal(customExercise?.kind, .custom, "custom activity kind")
+check(ExerciseLibrary.available(settings: gear).contains { $0.id == pullUpBar.exerciseID }, "custom activity is available")
+gear.customEquipment[0].enabled = false
+check(!ExerciseLibrary.available(settings: gear).contains { $0.id == pullUpBar.exerciseID },
+      "switched-off custom equipment is not suggested")
+gear.customEquipment[0].enabled = true
+
+// The engine reaches a custom activity in its rotation.
+var customDay = makeDay()
+customDay.nextBreakDue = at("2026-11-27", 9, 30)
+customDay.lastBreakKind = .balanceBoard
+let customPlan = Planner.plan(events: [], date: at("2026-11-27", 10), settings: gear, calendar: cal)
+let customDecision = BreakEngine.decide(now: at("2026-11-27", 10), day: customDay, settings: gear,
+                                        plan: customPlan, health: HealthSnapshot(stress: 20, bodyBattery: 60),
+                                        media: .clear, activeBreak: false, calendar: cal)
+equal(customDecision.exercise?.id, pullUpBar.exerciseID, "the engine suggests custom equipment in turn")
+equal(customDecision.nextBreakLabel, "Pull-up bar", "a custom break is called by its own name")
+
+// Settings with custom equipment survive a round trip.
+let gearData = try JSONEncoder().encode(gear)
+let gearBack = try JSONDecoder().decode(AppSettings.self, from: gearData)
+equal(gearBack.customEquipment.first?.name, "Pull-up bar", "custom equipment is saved")
+
+// MARK: - Day totals follow the activity list
+
+func activity(_ kind: BreakKind, _ minutes: Int, outcome: BreakOutcome = .done,
+              countsAsStanding: Bool? = nil) -> BreakEvent {
+    BreakEvent(dayKey: "2026-11-27", exerciseID: kind.rawValue, kind: kind,
+               plannedAt: at("2026-11-27", 10), startedAt: at("2026-11-27", 10),
+               outcome: outcome, minutes: minutes, countsAsStanding: countsAsStanding)
+}
+var logged = [activity(.walkingPad, 20), activity(.standingBlock, 30), activity(.squats, 2),
+              activity(.lunch, 35), activity(.custom, 10, countsAsStanding: true),
+              activity(.custom, 10, countsAsStanding: false), activity(.balanceBoard, 5, outcome: .skipped)]
+var totals = DayTotals.totals(for: logged)
+equal(totals.walking, 20, "walking minutes come from walking-pad sessions")
+equal(totals.standing, 30 + 1 + 10 + 5, "standing adds blocks, short breaks at half length and custom equipment")
+equal(totals.lunch, 35, "lunch is the longest lunch")
+logged[0].minutes = 45
+logged.removeAll { $0.kind == .standingBlock }
+totals = DayTotals.totals(for: logged)
+equal(totals.walking, 45, "editing an activity's length changes the total")
+equal(totals.standing, 1 + 10 + 5, "deleting an activity removes its minutes")
+var totalsDay = makeDay()
+totalsDay.standingMinutes = 999
+DayTotals.apply(to: &totalsDay, breaks: logged)
+equal(totalsDay.standingMinutes, 16, "applied totals replace stale counters")
+
+// A custom activity keeps its name in history after the equipment is gone.
+let named = BreakEvent(dayKey: "2026-11-27", exerciseID: pullUpBar.exerciseID, kind: .custom,
+                       plannedAt: at("2026-11-27", 10), outcome: .done, minutes: 4, title: "Pull-up bar")
+equal(named.displayTitle, "Pull-up bar", "custom activities show their own name")
+equal(activity(.squats, 2).displayTitle, "Squats", "built-in activities show their kind")
+let namedBack = try JSONDecoder().decode(BreakEvent.self, from: JSONEncoder().encode(named))
+equal(namedBack.title, "Pull-up bar", "the name is saved with the activity")
+
 // MARK: - Result
 
 print("Ran \(checks) checks.")

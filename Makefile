@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build install test garmin run clean
+.PHONY: build install dmg test garmin run clean
 
 # Build dist/Dayline.app (ad-hoc signed).
 build:
@@ -9,6 +9,10 @@ build:
 # Build, copy to /Applications and launch.
 install:
 	./scripts/install.sh
+
+# Build dist/Dayline-<version>-<arch>.dmg for dragging into Applications.
+dmg:
+	./scripts/make-dmg.sh
 
 # Behavioural checks and a release build.
 test:

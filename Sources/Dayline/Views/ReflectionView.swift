@@ -152,7 +152,7 @@ struct ReflectionView: View {
                             Text(Fmt.time.string(from: brk.startedAt ?? brk.plannedAt))
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(DL.muted)
-                            Text("\(brk.kind.title) · \(brk.minutes) min")
+                            Text("\(brk.displayTitle) · \(brk.minutes) min")
                                 .font(.system(size: 11))
                             Spacer()
                             if let reason = brk.skipReason {

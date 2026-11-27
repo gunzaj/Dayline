@@ -1,9 +1,11 @@
 # Dayline
 
-A macOS menu-bar workday coach. It times movement breaks around your calendar,
-walks you through them, and keeps a private journal of how the work felt.
+A macOS workday coach. It times movement breaks around your calendar, walks you
+through them, and keeps a private journal of how the work felt. It lives in the
+menu bar for quick actions and has a desktop window with the overview, your
+activities, the journal and all summaries.
 
-No Dock icon. No account. Calendar and Garmin are read-only. Everything except
+No account. Calendar and Garmin are read-only. Everything except
 an optional AI insight stays on the Mac.
 
 ## What it does
@@ -15,6 +17,10 @@ an optional AI insight stays on the Mac.
 - **Guided breaks.** Box breathing with a moving square, rep counters, step
   cards, pose sequences, balance intervals, grip sets with rest, 30-minute
   lunch away from the desk.
+- **Your equipment.** Switch the built-in equipment on or off, remove what you
+  do not own, and add your own with a name and a session length.
+- **Editable activities.** Change the time, exercise, length or outcome of
+  anything logged, delete it, or add what was missed. Totals and goals follow.
 - **Journal.** Free entries plus a 4×4 mood grid (energy × pleasantness), with
   no default square. Guided reflection prompts at the end of the day.
 - **Summaries.** Day, week and year. Standing, breaks, lunch, longest seated
@@ -35,6 +41,7 @@ Command Line Tools alone; no Xcode project, no external Swift packages.
 make test     # swift build + behavioural checks + release build
 make build    # dist/Dayline.app, ad-hoc signed
 make install  # copy to /Applications and launch
+make dmg      # dist/Dayline-<version>-<arch>.dmg, drag to Applications
 ```
 
 To try it without waiting for real data:
@@ -81,7 +88,7 @@ writes it to disk. MFA is supported.
 Sources/DaylineCore     scheduling, break engine, storage, summaries, AI, Garmin
 Sources/Dayline         AppKit shell, SwiftUI screens, system services
 Sources/DaylineChecks   behavioural checks (no XCTest needed)
-scripts                 build, install, test, Garmin helper
+scripts                 build, install, disk image, test, Garmin helper
 docs/DECISIONS.md       why the app is shaped this way
 ```
 
